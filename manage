@@ -1,0 +1,472 @@
+#!/bin/bash
+
+
+#
+# Global variables etc
+#
+THIS_SCRIPT=$(readlink -f $0)
+PROJ_DIR=$(dirname $(dirname $THIS_SCRIPT))
+ROOT_DIR=$(dirname $(dirname $(dirname $THIS_SCRIPT)))
+
+INSTALL_AS="$ROOT_DIR/install/asyncstageout"
+INSTALL_COUCH="$ROOT_DIR/install/couchdb"
+
+CONFIG_COUCH="$ROOT_DIR/config/couchdb"
+CONFIG_AS="$ROOT_DIR/config/asyncstageout"
+
+COUCH_INIT_DONE=0
+AS_INIT_DONE=0
+
+
+COUCH_USER=couch_db_user
+COUCH_PASS=couch_db_password
+
+COUCH_HOST=127.0.0.1
+COUCH_PORT=5984
+COUCH_HOST_NAME=`hostname`
+
+COUCH_CERT_FILE=
+COUCH_KEY_FILE=
+
+# Flags to show which tools have been initialised
+if [ -e $INSTALL_AS/.init ]; then AS_INIT_DONE=1; else AS_INIT_DONE=0; fi;
+if [ -e $INSTALL_COUCH/.init ]; then COUCH_INIT_DONE=1; else COUCH_INIT_DONE=0; fi;
+
+#callbacks to activate or show initialisation has been done
+activate_asyncstageout(){
+    if [ ! -d "$INSTALL_AS" ]; then
+        mkdir -p $INSTALL_AS
+        mkdir -p $INSTALL_AS/Monitor/work
+        mkdir -p $INSTALL_AS/AsyncTransfer/dropbox/inputs
+	mkdir -p $INSTALL_AS/AsyncTransfer/dropbox/outputs
+    fi
+    touch $INSTALL_AS/.using
+    cp $ROOT_DIR/apps/asyncstageout/configuration/Example.py $CONFIG_AS/config-template.py
+    cp $ROOT_DIR/apps/asyncstageout/Monitor/monitor.conf $CONFIG_AS/monitor-template.conf
+}
+
+inited_asyncstageout(){
+    if [ ! -d "$INSTALL_AS" ]; then
+        mkdir -p $INSTALL_AS
+    fi
+    touch $INSTALL_AS/.init
+}
+inited_couch(){
+    if [ ! -d "$INSTALL_AS" ]; then
+        mkdir -p $INSTALL_AS
+    fi
+    touch $INSTALL_COUCH/.init
+}
+
+#
+# Passwords/Secrets handling
+#
+load_secrets_file(){
+    if [ "x$ASYNC_SECRETS_LOCATION" == "x" ]; then
+        ASYNC_SECRETS_LOCATION=$HOME/Async.secrets;
+    fi
+    if [ ! -e $ASYNC_SECRETS_LOCATION ]; then
+        echo "Password file: $ASYNC_SECRETS_LOCATION does not exist"
+        echo "Either set ASYNC_SECRETS_LOCATION to a valid file or check that $HOME/Async.secrets exists"
+        exit 1;
+    fi
+
+    local MATCH_COUCH_USER=`cat $ASYNC_SECRETS_LOCATION | grep COUCH_USER | sed s/COUCH_USER=//`
+    local MATCH_COUCH_PASS=`cat $ASYNC_SECRETS_LOCATION | grep COUCH_PASS | sed s/COUCH_PASS=//`
+    local MATCH_COUCH_HOST=`cat $ASYNC_SECRETS_LOCATION | grep COUCH_HOST | sed s/COUCH_HOST=//`
+    local MATCH_COUCH_PORT=`cat $ASYNC_SECRETS_LOCATION | grep COUCH_PORT | sed s/COUCH_PORT=//`
+    local MATCH_COUCH_CERT_FILE=`cat $ASYNC_SECRETS_LOCATION | grep COUCH_CERT_FILE | sed s/COUCH_CERT_FILE=//`
+    local MATCH_COUCH_KEY_FILE=`cat $ASYNC_SECRETS_LOCATION | grep COUCH_KEY_FILE | sed s/COUCH_KEY_FILE=//`
+    local MATCH_HOST_DN=`cat $ASYNC_SECRETS_LOCATION | grep HOST_DN | sed s/HOST_DN=//`
+    local MATCH_WMSTATS_URL=`cat $ASYNC_SECRETS_LOCATION | grep WMSTATS_URL | sed s/WMSTATS_URL=//`
+    local MATCH_UFC_SERVICE_URL=`cat $ASYNC_SECRETS_LOCATION | grep UFC_SERVICE_URL | sed s/UFC_SERVICE_URL=//`
+    local MATCH_OPS_PROXY=`cat $ASYNC_SECRETS_LOCATION | grep OPS_PROXY | sed s/OPS_PROXY=//`
+    local MATCH_AMQ_AUTH_FILE=`cat $ASYNC_SECRETS_LOCATION | grep AMQ_AUTH_FILE | sed s/AMQ_AUTH_FILE=//`
+
+    if [ "x$MATCH_COUCH_USER" == "x" ]; then
+        COUCH_USER=asynccouch;
+    else
+        COUCH_USER=$MATCH_COUCH_USER;
+    fi
+    if [ "x$MATCH_COUCH_PASS" == "x" ]; then
+        echo "Secrets file doesnt contain COUCH_PASS";
+        exit 1
+    else
+        COUCH_PASS=$MATCH_COUCH_PASS;
+    fi
+    if [ ! "x$MATCH_COUCH_PORT" == "x" ]; then
+        COUCH_PORT=$MATCH_COUCH_PORT;
+    fi
+    if [ ! "x$MATCH_COUCH_HOST" == "x" ]; then
+        COUCH_HOST=$MATCH_COUCH_HOST;
+    fi
+    # look for couch ssl certificate if not found check X509_USER_CERT and X509_USER_PROXY
+    if [ ! "x$MATCH_COUCH_CERT_FILE" == "x" ]; then
+        COUCH_CERT_FILE=$MATCH_COUCH_CERT_FILE;
+    elif [ ! "x$X509_USER_CERT" == "x" ]; then
+        COUCH_CERT_FILE=${X509_USER_CERT:-$X509_USER_PROXY};
+    fi
+    # look for couch ssl key if not found check X509_USER_KEY and X509_USER_PROXY
+    if [ ! "x$MATCH_COUCH_KEY_FILE" == "x" ]; then
+        COUCH_KEY_FILE=$MATCH_COUCH_KEY_FILE;
+    elif [ ! "x${X509_USER_KEY:-$X509_USER_PROXY}" == "x" ]; then
+        COUCH_KEY_FILE=${X509_USER_KEY:-$X509_USER_PROXY};
+    fi
+    if [ ! "x$MATCH_HOST_DN" == "x" ]; then
+        HOST_DN=$MATCH_HOST_DN;
+    fi
+    if [ ! "x$MATCH_WMSTATS_URL" == "x" ]; then
+        WMSTATS_URL=$MATCH_WMSTATS_URL;
+    fi
+    if [ ! "x$MATCH_UFC_SERVICE_URL" == "x" ]; then
+        UFC_SERVICE_URL=$MATCH_UFC_SERVICE_URL;
+    fi
+    if [ ! "x$MATCH_OPS_PROXY" == "x" ]; then
+        OPS_PROXY=$MATCH_OPS_PROXY;
+    fi
+    if [ ! "x$MATCH_AMQ_AUTH_FILE" == "x" ]; then
+        AMQ_AUTH_FILE=$MATCH_AMQ_AUTH_FILE;
+    fi
+}
+
+print_settings(){
+    echo "INSTALL_AS= $INSTALL_AS "
+    echo "CONFIG_COUCH= $CONFIG_COUCH "
+    echo "CONFIG_AS= $CONFIG_AS "
+    echo "COUCH_USER= $COUCH_USER "
+    echo "COUCH_PASS= $COUCH_PASS "
+    echo "COUCH_HOST= $COUCH_HOST "
+    echo "COUCH_PORT= $COUCH_PORT "
+    echo "COUCH_CERT_FILE= $COUCH_CERT_FILE "
+    echo "COUCH_KEY_FILE= $COUCH_KEY_FILE "
+}
+
+#
+# Environment
+#
+
+. $ROOT_DIR/apps/pystack/etc/profile.d/init.sh
+. $ROOT_DIR/apps/couchdb/etc/profile.d/init.sh
+. $ROOT_DIR/apps/asyncstageout/etc/profile.d/init.sh
+
+
+#########################
+# CouchDB #
+#########################
+
+#
+# first time startup for couch: disable admin party and create user based on secrets file
+#
+init_couch_pre(){
+    echo "Initialising CouchDB on $COUCH_HOST:$COUCH_PORT..."
+    mkdir -p $INSTALL_COUCH/logs
+    mkdir -p $INSTALL_COUCH/database
+#    perl -p -i -e "s{deploy_project_root/couchdb}{$INSTALL_COUCH}" $CONFIG_COUCH/local.ini
+#    # couch ini file requires IP based hostname
+#    perl -p -i -e "s{bind_address = 0.0.0.0}{bind_address = $COUCH_HOST}g" $CONFIG_COUCH/local.ini
+#    perl -p -i -e "s{port = 5984}{port = $COUCH_PORT}g" $CONFIG_COUCH/local.ini
+#    perl -p -i -e "s{;admin = mysecretpassword}{$COUCH_USER = $COUCH_PASS}g" $CONFIG_COUCH/local.ini
+#    if [ "x$COUCH_CERT_FILE" != "x" ] && [ "x$COUCH_KEY_FILE" != "x" ]; then
+#        perl -p -i -e "s{;cert_file =.*}{cert_file = $COUCH_CERT_FILE}g" $CONFIG_COUCH/local.ini
+#        perl -p -i -e "s{;key_file =.*}{key_file = $COUCH_KEY_FILE}g" $CONFIG_COUCH/local.ini
+#        perl -p -i -e "s{;cacert_file =.*}{cacert_file = $COUCH_CERT_FILE}g" $CONFIG_COUCH/local.ini
+#    fi
+
+    echo "
+[couchdb]
+;max_document_size = 4294967296 ; bytes
+database_dir = $ROOT_DIR/install/couchdb/database
+view_index_dir = $ROOT_DIR/install/couchdb/database
+uri_file = $ROOT_DIR/install/couchdb/logs/couch.uri
+os_process_timeout = 1000000
+
+
+
+[httpd]
+port = 5996
+bind_address = 0.0.0.0
+
+[log]
+level = info
+file = $ROOT_DIR/install/couchdb/logs/couch.log
+
+[couch_httpd_auth]
+secret = 5c433c92dc5f58a2acf75ffe2b3489cb
+
+[update_notification]
+[admins]
+couch_db_user = -hashed-19d36ce70b1bc02e36a9a8c38ee31730cee1018b,470f665b43d55f7c67b5ecdf9361721c
+
+[ssl]
+
+
+"> $CONFIG_COUCH/local.ini
+
+}
+
+init_couch_post(){
+    inited_couch;
+}
+
+status_of_couch(){
+    echo "+ Couch Status:"
+    if [ ! -e $INSTALL_COUCH/logs/couchdb.pid ]; then
+        echo "++ Couch process file not found"
+        return
+    fi
+    local COUCH_PID=`cat $INSTALL_COUCH/logs/couchdb.pid`
+    kill -0 $COUCH_PID;
+    local COUCH_STATUS=$?
+    if [ $COUCH_STATUS -eq 0 ]; then
+        echo "++ Couch running with process: $COUCH_PID";
+    else
+        echo "++ Couch process not running"
+    fi
+    echo "++" `curl -s $COUCH_HOST:$COUCH_PORT`
+}
+
+#
+# Startup couch
+#
+start_couch(){
+   load_secrets_file;
+   echo "starting couch..."
+#   if [ $COUCH_INIT_DONE -eq 0 ]; then
+       echo "CouchDB has not been initialised... running pre initialisation";
+       init_couch_pre;
+ #  fi
+   couchdb -b -a $CONFIG_COUCH/local.ini \
+           -p $INSTALL_COUCH/logs/couchdb.pid \
+           -e $INSTALL_COUCH/logs/stderr.log \
+           -o $INSTALL_COUCH/logs/stdout.log
+   if [ $COUCH_INIT_DONE -eq 0 ]; then
+       echo "CouchDB has not been initialised... running post initialisation"
+       init_couch_post;
+   fi
+
+
+}
+
+#
+# shutdown couch
+#
+stop_couch(){
+   echo "stopping couch...";
+   couchdb -d -p $INSTALL_COUCH/logs/couchdb.pid;
+
+}
+
+clean_couch(){
+    echo "cleaning couch installation..."
+    stop_couch
+    echo "removing files"
+    rm -f $INSTALL_COUCH/.init
+    rm -rf $INSTALL_COUCH/database/*
+
+}
+
+
+#
+# combined startup of all required services
+#
+start_services(){
+    echo "Starting Services..."
+    #start up the services required by the async
+    start_couch;
+}
+
+stop_services(){
+    #shut down all services
+    echo "Shutting down services..."
+    stop_couch;
+}
+
+init_async(){
+    load_secrets_file;
+    wmagent-mod-config --input=$CONFIG_AS/config-template.py \
+                       --output=$CONFIG_AS/config.py \
+                       --couch_url=http://$COUCH_USER:$COUCH_PASS@$COUCH_HOST:$COUCH_PORT \
+                       --working_dir=$INSTALL_AS \
+                       --host_dn=$HOST_DN \
+                       --wmstats_url=$WMSTATS_URL \
+                       --ufc_service_url=$UFC_SERVICE_URL \
+--ops_proxy=$OPS_PROXY \
+                       --amq_auth_file=$AMQ_AUTH_FILE \
+
+    export WMAGENT_CONFIG=$CONFIG_AS/config.py
+    export ASYNC_ROOT=$ROOT_DIR/apps/asyncstageout
+    wmagent-couchapp-init;
+    unset ASYNC_ROOT
+    unset WMAGENT_CONFIG
+
+rm -fr $ROOT_DIR/apps/asyncstageout/Monitor/PHEDEX
+cp -r ~/ASO_lifecycle/PHEDEX $ROOT_DIR/apps/asyncstageout/Monitor/
+
+rm -fr $ROOT_DIR/apps/asyncstageout/Monitor/perl_lib
+cp -r ~/ASO_lifecycle/perl_lib $ROOT_DIR/apps/asyncstageout/Monitor/
+
+
+    echo "inbox  = $ROOT_DIR/install/asyncstageout/AsyncTransfer/dropbox/outputs
+inbox_poll_interval = 30
+workdir = $ROOT_DIR/install/asyncstageout/Monitor/work
+outbox  = $ROOT_DIR/install/asyncstageout/AsyncTransfer/dropbox/inputs
+logfile = $ROOT_DIR/install/asyncstageout/Monitor/aso-monitor.log
+service = https://fts3-pilot.cern.ch:8443/
+job_poll_interval_slow = 10    # Job-polling speed when there are very few jobs
+job_poll_interval_fast = 0.3   # Job-polling speed when there are lots of jobs
+job_parallelism        = 20     # Maximum number of jobs to poll in parallel
+per_job_poll_interval  = 7     # for each job in the queue, do not poll it more frequently than this interval
+job_timeout            = 72000 # Timeout for transfer job completion
+file_timeout           = 18000
+
+fake_transfer_script = $ROOT_DIR/apps/asyncstageout/Monitor/PHEDEX/Testbed/FakeFTS.pl
+fake_transfer_rate = 104857600 # 1048576 is 1 MB/sec
+
+#job_logs = $ROOT_DIR/../logs/Monitor/
+debug_jobs = 1
+
+#keep_inputs = 1
+debug = 1
+verbose = 1
+
+
+" > $CONFIG_AS/monitor.conf
+
+cp -r ~/ASO_lifecycle/src/* $ROOT_DIR/sw.pre.riahi/slc6_amd64_gcc481/cms/asyncstageout/1.0.3pre4/lib/python2.6/site-packages/AsyncStageOut/ 
+
+echo "unset PERL5LIB
+root=$ROOT_DIR
+. \$root/sw*/slc*/cms/PHEDEX-micro/*/etc/profile.d/init.sh
+. \$root/sw*/slc*/cms/PHEDEX-lifecycle/*/etc/profile.d/init.sh
+. \$root/sw*/slc*/cms/asyncstageout/*/etc/profile.d/init.sh
+
+# Remove old FakeFTS.pl from LifeCycle distribution!
+(rm $root/sw*/slc*/cms/PHEDEX-lifecycle/*/bin/FakeFTS.pl) 2>/dev/null
+
+# Add PHEDEX-micro Utilities to the PATH
+export PATH=\${PATH}:\`ls -d \$root/sw*/slc*/cms/PHEDEX-micro/*/Utilities\`
+
+export PERL5LIB=\${PERL5LIB}:\`pwd\`/perl_lib
+" > $ROOT_DIR/apps/asyncstageout/Monitor/setup.sh 
+
+
+    inited_asyncstageout;
+
+}
+
+#
+# initialise the async
+#
+init_asyncstageout(){
+
+    #if [ $AS_INIT_DONE -eq 0 ]; then
+      echo "Initialising AsyncStageOut..."
+      init_async;
+    #fi
+}
+
+start_asyncstageout(){
+    #init_asyncstageout;
+    echo "Starting AsyncStageOut..."
+    wmcoreD --start --config=$CONFIG_AS/config.py
+    #cd $ROOT_DIR/apps/asyncstageout/Monitor
+    source $ROOT_DIR/apps/asyncstageout/Monitor/setup.sh
+    #cd $ROOT_DIR
+    $ROOT_DIR/apps/asyncstageout/Monitor/ASO-Monitor.pl --config $CONFIG_AS/monitor.conf
+
+}
+
+stop_asyncstageout(){
+    echo "Shutting down asyncstageot...";
+    wmcoreD --shutdown --config=$CONFIG_AS/config.py;
+    echo "Stopping: Monitor"
+    kill -9 `cat $INSTALL_AS/Monitor/aso-monitor.pid`
+}
+
+status_of_asyncstageout(){
+    echo "Status of Asyncstageout:"
+    wmcoreD --status --config=$CONFIG_AS/config.py
+}
+
+execute_command_asyncstageout(){
+    shift;
+    local RUNTHIS=$1
+    local ASYNCSTAGEOUT_BIN_DIR=$ROOT_DIR/apps/asyncstageout/bin
+    if [ ! -e $ASYNCSTAGEOUT_BIN_DIR/$1 ]; then
+        echo "$RUNTHIS is not a binary in asyncstageout/bin"
+        exit 1
+    fi
+    shift;
+    load_secrets_file;
+    export WMAGENT_CONFIG=$CONFIG_AS/config.py
+    echo "Executing $RUNTHIS $@ ..."
+    $RUNTHIS $@;
+}
+
+
+#
+# revert async back to pre initialised state & wipe out
+# everything currently in existence.
+clean_asyncstageout(){
+    load_secrets_file;
+    stop_asyncstageout;
+    # Todo: clean couchapps?
+    echo "Cleaning asyncstageout..."
+    rm -rf $INSTALL_AS/*
+    rm -f $CONFIG_AS/config.py;
+    rm -f $INSTALL_AS/.init
+
+}
+
+
+status(){
+    load_secrets_file;
+    status_of_couch;
+    status_of_asyncstageout;
+}
+
+clean_all(){
+    clean_couch;
+    clean_asyncstageout;
+}
+
+help(){
+    echo "Documentation for this script can be found at: https://svnweb.cern.ch/trac/CMSDMWM/wiki/AsyncStageOutManagement";
+}
+#######################################################
+# Main
+#######################################################
+
+case $1 in
+  status)
+    status ;;
+  activate-asyncstageout)
+    activate_asyncstageout;;
+  start-services)
+     start_services;;
+  stop-services)
+     stop_services;;
+  start-couch)
+     start_couch;;
+  stop-couch)
+     stop_couch;;
+  clean-couch)
+     clean_couch;;
+  init-asyncstageout)
+     init_asyncstageout;;
+  start-asyncstageout)
+     start_asyncstageout;;
+  stop-asyncstageout)
+     stop_asyncstageout;;
+  clean-asyncstageout)
+     clean_asyncstageout;;
+  clean-all)
+     clean_all;;
+  execute-asyncstageout)
+     execute_command_asyncstageout $@;;
+  version)
+    echo "Management script for AsyncStageOut version 0" ;;
+  * )
+    echo "$0: unknown action '$1', please try '$0 help' or documentation." 1>&2
+    exit 1 ;;
+esac
