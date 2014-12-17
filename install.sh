@@ -25,6 +25,7 @@ cd $SW_AREA
 ##mv geneguvo-deployment-a2cf4d0 cfg
 cd cfg_aso
 
+cp $SW_AREA/ASO_lifecycle/deploy asyncstageout/deploy
 #cd deployment-HG1401h
 #./Deploy ${REPO} -R asyncstageout@1.0.1 -s prep -A slc5_amd64_gcc461 -t v01 $DIR asyncstageout asyncstageout/offsite
 #./Deploy ${REPO} -R asyncstageout@1.0.1 -s sw -A slc5_amd64_gcc461 -t v01 $DIR asyncstageout asyncstageout/offsite
