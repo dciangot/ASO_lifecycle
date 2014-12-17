@@ -1,0 +1,61 @@
+# vim: set ft=sh sw=2 ts=8 et :
+deploy_asyncstageout_variants="default offsite"
+deploy_asyncstageout_deps()
+{
+  deploy couchdb
+#  case $variant in offsite ) ;; * ) deploy bigcouch ;; esac
+}
+
+deploy_asyncstageout_prep()
+{
+  case $variant in offsite) opts= ;; *) opts="-s -l" ;; esac
+  mkproj $opts
+}
+
+deploy_asyncstageout_sw()
+{
+  deploy_pkg comp cms+asyncstageout
+}
+
+deploy_asyncstageout_post()
+{
+  case $variant in
+    offsite )
+      mkdir -p $root/current/install/couchdb
+
+      mkdir -p $root/current/install/asyncstageout
+      mkdir -p $root/current/config/asyncstageout
+
+      # Tell couchdb to pick up AsyncTransfer on the next restart
+      # and configure replication, compaction and backup, too
+      local couchdb_config=$root/current/config/couchdb
+      local couchdb_state=$root/state/couchdb
+
+      local couchdb_ini=$root/current/config/asyncstageout/local.ini
+      perl -p -i -e "s{deploy_project_root}{$root/current/install}g" $couchdb_ini
+      cp -f $couchdb_ini $root/current/config/couchdb
+
+      for area in stagingarea replication; do
+         rm -f $couchdb_state/$area/asyncstageout
+         touch $couchdb_state/$area/asyncstageout
+      done
+      ;;
+    default )
+      # Tell couch to push the AlertsCollector couchapp on the next restart
+      for couch in couchdb:5984; do
+        echo "couchapp push " \
+             "$root/current/apps/asyncstageout/couchapp/AsyncTransfer" \
+             "http://localhost:${couch##*:}/asynctransfer" \
+             > $root/state/${couch%%:*}/stagingarea/asyncstageout
+        echo "couchapp push " \
+             "$root/current/apps/asyncstageout/couchapp/DBSPublisher" \
+             "http://localhost:${couch##*:}/asynctransfer" \
+             >> $root/state/${couch%%:*}/stagingarea/asyncstageout
+        echo "couchapp push " \
+             "$root/current/apps/asyncstageout/couchapp/monitor" \
+             "http://localhost:${couch##*:}/asynctransfer" \
+             >> $root/state/${couch%%:*}/stagingarea/asyncstageout
+      done
+      ;;
+  esac
+}
