@@ -1,0 +1,8 @@
+ASO_lifecycle deployment for slc6
+=============
+
+./install.sh #will deploy the ASO on $HOME/
+
+cd $HOME/103pre4_lifecycle/current
+
+
