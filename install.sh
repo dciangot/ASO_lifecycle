@@ -42,4 +42,4 @@ mv ASO_lifecycle $SW_AREA/ASO_lifecycle
 cp $SW_AREA/ASO_lifecycle/manage $DIR/current/config/asyncstageout/
 cp $SW_AREA/ASO_lifecycle/LoadDummyData.py $DIR/current/
 cd $DIR/current
-rm -fr $SW_AREA/ASO_lifecycle
+
