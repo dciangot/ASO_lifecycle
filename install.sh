@@ -1,7 +1,7 @@
 #! /bin/sh
 
 set -x
-SW_AREA=/home/dboard/
+SW_AREA=$HOME
 #REPO="-r comp=comp"
 #REPO="-r comp=comp.pre"
 #REPO="-r comp=comp.pre.mcinquil"
@@ -9,9 +9,9 @@ REPO="-r comp=comp.pre.riahi"
 #DIR="/home/crab/async_install_pre5"
 ##DIR="/data/ASO/async_install_pre15test"
 #DIR="/data/ASO/async_install_101"
-DIR="/home/dboard/Diego/103pre4_lifecycle"
+DIR="$HOME/103pre4_lifecycle"
 
-cd $SW_AREA/Diego
+cd $SW_AREA
 #wget -O cfg.zip --no-check-certificate https://github.com/geneguvo/deployment/zipball/12.07b
 #wget -O cfg.zip --no-check-certificate https://github.com/geneguvo/deployment/zipball/12.10c
 ###wget -O cfg.zip --no-check-certificate https://github.com/dmwm/deployment/zipball/12.10c
