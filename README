@@ -1,8 +1,16 @@
-scp -r dciangot@lxplus.cern.ch:~/ASO_lifecycle2 ~/ASO_lifecycle
-cp ~/ASO_lifecycle/install.sh . 
-./install.sh 
-cd 103pre4_lifecycle/current/
+
+
+ASO_lifecycle deployment for slc6
+=============
+./install.sh #will deploy the ASO on $HOME/
+cd $HOME/103pre4_lifecycle/current
+
 ./config/asyncstageout/manage activate-asyncstageout
 ./config/asyncstageout/manage start-services
 ./config/asyncstageout/manage init-asyncstageout
 ./config/asyncstageout/manage start-asyncstageout
+
+
+Config Files
+---------------
+
